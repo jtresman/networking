@@ -17,7 +17,7 @@ void sendHeader();
 int port;
 char fileExt[9][6];
 char fileHeader[9][32];
-char * documentRoot = "";
+char documentRoot[128];
 char defaultPage[64];
 
 int main(int argc, char **argv) {
@@ -88,8 +88,8 @@ void getConfig() {
 
                 case 2:
                 
-                    documentRoot = line;
-                    documentRoot++;
+                    strcpy(documentRoot, line);
+                    memmove (documentRoot, documentRoot+1, strlen (documentRoot+1) + 1);
                     //Remove the Newline and Quotes
                     documentRoot[strlen(documentRoot)-2] = 0;
                     printf("Document Root: %s\n", documentRoot);
@@ -173,11 +173,12 @@ void getContent( char * file, int connfd) {
 
     char * token  = strtok(file, " ");
     char * location;
-    char path[1024] = documentRoot;
+    char path[1024] = {};
     int fd;  //file descriptor
     char * ext;
     int i = 0;
 
+    strcpy(path, documentRoot);
 
     //Grab Location Token
     token = strtok(NULL, " ");
