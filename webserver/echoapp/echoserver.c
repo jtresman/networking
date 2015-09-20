@@ -1,5 +1,17 @@
-/*
- * echoserver.c - A sequential httpRequest server
+/* **************************************************************
+ * 
+ * CSCI 4273 - Network Systems
+ * Basic Webserver 
+ * This webserver servers up basic HTML, TXT, PNG
+ *  JPG. It also supports piplining as well as 
+ *  subsequent requests.
+ * 
+ * Author: Jacob Resman
+ * 20 September 2015
+ * Based on: echoserver.c - A sequential httpRequest server from
+ *  from http://www.csc.villanova.edu/~mdamian/sockets/echoC.htm
+ * 
+ ****************************************************************
  */
 
 #include "nethelp.h"
@@ -127,8 +139,9 @@ void getConfig() {
         free(line);
 }
 
+//Alarm Handler
 void timeout_handler(int value) {
-    printf("Handler\n");
+    // printf("Handler\n");
     return;
 }
 
@@ -176,6 +189,7 @@ void httpRequest(int connfd) {
 
          // printf("DO KEEP ALIVE STUFF\n");
 
+        // Loop Until the Alarm Occurs
          while(1) {
 
             n = readline(connfd, command, MAXLINE);
