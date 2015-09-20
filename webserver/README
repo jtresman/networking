@@ -1,0 +1,14 @@
+README
+
+Programming Assignment 1
+Networking Systems
+20 September 2015
+
+BUILD: 
+ 1. Change location of the config file in nethelpt.h it's location.
+ 2. Change the configuration file to the desired configuration.
+ 3. Natigate to the webserver folder and type: make
+
+RUNNING: 
+ 1. Navigate the the echoapp folder and type to run the webserver: ./echoserver
+ 2. In a web browser nagivate <localhost:port>, where port in the specified in the configuration file.

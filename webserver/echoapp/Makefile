@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -g
-LDFLAGS = -L /usr/lib/happycoders -pthread -lnsl -lrt -lsocket 
+LDFLAGS = -L /usr/lib/happycoders -lnsl -lrt -lsocket
 
 OBJS = nethelp.o echoserver.o 
 

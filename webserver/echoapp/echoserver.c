@@ -12,6 +12,7 @@ char * checkDefaultFile();
 void sendFile();
 void getContent();
 void sendHeader();
+void errorCode();
 
 //Global Values
 int port;
@@ -83,7 +84,7 @@ void getConfig() {
                 case 1:
                     
                     port = atoi(line);
-                    printf("Service Port: %d\n",port);
+                    // printf("Service Port: %d\n",port);
                     break;
 
                 case 2:
@@ -92,7 +93,7 @@ void getConfig() {
                     memmove (documentRoot, documentRoot+1, strlen (documentRoot+1) + 1);
                     //Remove the Newline and Quotes
                     documentRoot[strlen(documentRoot)-2] = 0;
-                    printf("Document Root: %s\n", documentRoot);
+                    // printf("Document Root: %s\n", documentRoot);
                     break;
 
                 case 3:
@@ -100,17 +101,17 @@ void getConfig() {
                     strcpy(defaultPage, line);
                     //Remove the Newline
                     defaultPage[strlen(defaultPage)-1] = 0;
-                    printf("Default Page: %s\n", defaultPage);
+                    // printf("Default Page: %s\n", defaultPage);
                     break;
 
                 case 4: 
                     
                     tok = strtok(line, " ");
                     strcpy(fileExt[i], tok);
-                    printf("File Ext: %s\n",tok);
+                    // printf("File Ext: %s\n",tok);
                     tok = strtok(NULL, " ");
                     strcpy(fileHeader[i], tok); 
-                    printf("File Header: %s\n",tok);
+                    // printf("File Header: %s\n",tok);
                     ++i;
                     break;
 
@@ -126,44 +127,79 @@ void getConfig() {
         free(line);
 }
 
+void timeout_handler(int value) {
+    printf("Handler\n");
+    return;
+}
+
 //Read the Request Page and Information
 void httpRequest(int connfd) {
     
     char command[MAXLINE] = ""; 
     char host[MAXLINE] = ""; 
     char keepAlive[MAXLINE] = ""; 
-    
-    //Read First 3 Line
+
+    timer_t timer;
+    int n;
+
+    //Read Command, Host and Keep-Alive
     readline(connfd, command, MAXLINE);
     readline(connfd, host, MAXLINE);
     readline(connfd, keepAlive, MAXLINE);
-
-    printf("Line 1: %s\n", command);
-    printf("Line 2: %s\n", host);
-    printf("Line 3: %s\n", keepAlive);
+    
+    // printf("Line 1: %s\n", command);
+    // printf("Line 2: %s\n", host);
+    // printf("Line 3: %s\n", keepAlive);
     // printf("Line Num: %d\n", n);
 
     // Check if GET Command
     if (strncmp(command, "GET", 3) == 0) {
-
         getContent(command, connfd);
         // printf("GET CALLED!\n");
-    } else {
+    } else if(n == -1) {
+        //Intentionally Left Blank
 
+    }else {
+        errorCode(400, 1, command, connfd);
         printf("Unsupported Command: %s\n", command);
         return;
     }
     
     //Check for keep-alive
-    if (strcmp(keepAlive, "Connection: keep-alive\n") == 0) {
+    if (strcmp(keepAlive, "Connection: keep-alive\r\n") == 0) {
 
-         printf("DO KEEP ALIVE STUFF\n");
+
+        //Setup Alarm for Keep Alive
+        signal(SIGALRM, timeout_handler);
+        siginterrupt(SIGALRM, 1);
+        alarm(10);
+
+         // printf("DO KEEP ALIVE STUFF\n");
+
+         while(1) {
+
+            n = readline(connfd, command, MAXLINE);
+
+            if (strncmp(command, "GET", 3) == 0) {
+                alarm(10);
+                timer = time(NULL);
+                getContent(command, connfd);
+                // printf("GET CALLED!\n");
+            }
+            
+            if (n == -1 && errno == EINTR) {
+                // printf("read() failed\n");
+                break;
+            }                      
+        }
+
+        // printf("HTTP REQUEST PROCESSED!\n");
 
     } 
 
-    printf("HTTP REQUEST PROCESSED!\n");
+    // printf("HTTP REQUEST PROCESSED!\n");
 
-    printf("Closing Connection: %d\n", connfd);
+    // printf("Closing Connection: %d\n", connfd);
     close(connfd);
 }
 
@@ -173,6 +209,7 @@ void getContent( char * file, int connfd) {
 
     char * token  = strtok(file, " ");
     char * location;
+    char * version;
     char path[1024] = {};
     int fd;  //file descriptor
     char * ext;
@@ -184,25 +221,36 @@ void getContent( char * file, int connfd) {
     token = strtok(NULL, " ");
     location =  token;
 
-    if(location == NULL)
+    token = strtok(NULL, " ");
+    version =  token;
+
+    //Check if No Location Specified
+    if(location == NULL || token == NULL || version == NULL)
     {
-        printf("No Location Specified\n");
+        printf("BAD URI!\n");
+        errorCode(400, 2, file, connfd);
         return;
     }
 
-    printf("Location: %s\n", location);
+    if (strcmp(version, "HTTP/1.1\r\n") != 0){
+        printf("Invaid HTTP Version!\n");
+        errorCode(400, 3, version, connfd);
+        return;
+    }
+
+    // printf("Location: %s\n", location);
     // printf("Cmp: %d\n", strcmp(location, "/")); 
 
     //Determine File Type
     if (strcmp(location, "/") == 0){
         
-        printf("Path: %s\n", path);
-        printf("defaultPage: %s\n",defaultPage );
+        // printf("Path: %s\n", path);
+        // printf("defaultPage: %s\n",defaultPage );
 
         i = 0;
         strcat(path, "/");
         strcat(path, defaultPage);
-        printf("Path: %s12\n", path);
+        // printf("Path: %s12\n", path);
 
     } else {
 
@@ -215,16 +263,18 @@ void getContent( char * file, int connfd) {
 
         } else {
 
+            errorCode(501, 0, location, connfd);
+            return;
             //Unsupportedd File Type
-            write(connfd, CONTENT_TYPE, strlen(CONTENT_TYPE));
-            write(connfd, "text/plain\n", 11);
-            write(connfd, ERROR_501, strlen(ERROR_501));
-            write(connfd, location, strlen(location));
-            write(connfd, "\r\n", 2); 
+            // write(connfd, CONTENT_TYPE, strlen(CONTENT_TYPE));
+            // write(connfd, "text/plain\n", 11);
+            // write(connfd, ERROR_501, strlen(ERROR_501));
+            // write(connfd, location, strlen(location));
+            // write(connfd, "\r\n", 2); 
         }
     } 
 
-    printf("File: %s\n", path);
+    // printf("File: %s\n", path);
 
     //Check if the File Exists and Send it.
     fd = open(path, O_RDONLY);
@@ -232,7 +282,9 @@ void getContent( char * file, int connfd) {
     printf("File Des: %d\n", fd );
 
     if (fd == -1) {
-         
+         printf("File Doesn't Exists!\n");
+         errorCode(404, 0, location, connfd);
+         close(fd);
         return;
     } else {
         sendHeader(fd, i, connfd);
@@ -278,7 +330,7 @@ void sendHeader(int fd, int i, int connfd) {
     write(connfd, fileHeader[i], strlen(fileHeader[i]));
     write(connfd, "\n", 1);
 
-    printf("File Header: %s\n", fileHeader[i]);
+    // printf("File Header: %s\n", fileHeader[i]);
 }
 
 //Send the Requested File to the Client
@@ -310,24 +362,92 @@ void sendFile(int fd, int connfd) {
 //Send Content for Error Code
 void errorCode(int err, int type, char * loc, int connfd) {
 
-    write(connfd, CONTENT_TYPE, strlen(CONTENT_TYPE));
-    write(connfd, "text/plain\n", 11);
+    printf("There was an ERROR!\n");
+    char message[BUFSIZ];
+    char strLength[BUFSIZ];
+
+    //Construct Error Message
+    //THIS IS SUPER UGLY!
+    //I tried creating the message and doing all the writing at the end
+    // however it never seemed to send the error correctly.
 
     switch (err) {
         case 400:
+            printf("ERROR 400\n");
+            
+            switch (type) {
+                case 1:
+                    sprintf(message, "400 Bad Request: Invalid Method %s \r\n", loc);
+                    write(connfd, ERROR_400, strlen(ERROR_400));
+                    sprintf(strLength, "%d\n", strlen(message));
+                    write(connfd, CONTENT_LENGTH, strlen(CONTENT_LENGTH));
+                    write(connfd, strLength, strlen(strLength)); 
+                    write(connfd, CONTENT_TYPE, strlen(CONTENT_TYPE));
+                    write(connfd, "text/plain\r\n", strlen("text/plain\r\n"));
+                    write(connfd, "\r\n", 2);
+                    write(connfd, message, strlen(message));
+                    break;
+                case 2:
+                    sprintf(message, "400 Bad Request: Invalid URI %s \r\n", loc);
+                    write(connfd, ERROR_400, strlen(ERROR_400));
+                    sprintf(strLength, "%d\n", strlen(message));
+                    write(connfd, CONTENT_LENGTH, strlen(CONTENT_LENGTH));
+                    write(connfd, strLength, strlen(strLength)); 
+                    write(connfd, CONTENT_TYPE, strlen(CONTENT_TYPE));
+                    write(connfd, "text/plain\r\n", strlen("text/plain\r\n"));
+                    write(connfd, "\r\n", 2);
+                    write(connfd, message, strlen(message));
+                    break;
+                case 3:
+                    sprintf(message, "400 Bad Request: Invalid HTTP-Version %s \r\n", loc);
+                    write(connfd, ERROR_400, strlen(ERROR_400));
+                    sprintf(strLength, "%d\n", strlen(message));
+                    write(connfd, CONTENT_LENGTH, strlen(CONTENT_LENGTH));
+                    write(connfd, strLength, strlen(strLength)); 
+                    write(connfd, CONTENT_TYPE, strlen(CONTENT_TYPE));
+                    write(connfd, "text/plain\r\n", strlen("text/plain\r\n"));
+                    write(connfd, "\r\n", 2);
+                    write(connfd, message, strlen(message));
+                    break;
+            }
             break;
         case 404:
+            printf("ERROR 404\n");
+            sprintf(message, "404 Not Found: %s \r\n", loc);
             write(connfd, ERROR_404, strlen(ERROR_404));
-            write(connfd, loc, strlen(loc));
-            write(connfd, "\r\n", 1);
+            sprintf(strLength, "%d\n", strlen(message));
+            write(connfd, CONTENT_LENGTH, strlen(CONTENT_LENGTH));
+            write(connfd, strLength, strlen(strLength)); 
+            write(connfd, CONTENT_TYPE, strlen(CONTENT_TYPE));
+            write(connfd, "text/plain\r\n", strlen("text/plain\r\n"));
+            write(connfd, "\r\n", 2);
+            write(connfd, message, strlen(message));
             break;
         case 501:
-            //Unsupportedd File Type
+            //Unsupported File Type
+            printf("ERROR 501\n");
+            sprintf(message, "501 Unsupported File: %s \r\n", loc);
             write(connfd, ERROR_501, strlen(ERROR_501));
-            write(connfd, loc, strlen(loc));
-            write(connfd, "\r\n", 2); 
+            sprintf(strLength, "%d\n", strlen(message));
+            write(connfd, CONTENT_LENGTH, strlen(CONTENT_LENGTH));
+            write(connfd, strLength, strlen(strLength)); 
+            write(connfd, CONTENT_TYPE, strlen(CONTENT_TYPE));
+            write(connfd, "text/plain\r\n", strlen("text/plain\r\n"));
+            write(connfd, "\r\n", 2);
+            write(connfd, message, strlen(message));
             break;
         case 500:
+            //All Other Errors
+            printf("ERROR 500\n");
+            sprintf(message, "500 Internal Server Error: cannot allocate memeoryr\n");
+            write(connfd, ERROR_500, strlen(ERROR_500));
+            sprintf(strLength, "%d\n", strlen(message));
+            write(connfd, CONTENT_LENGTH, strlen(CONTENT_LENGTH));
+            write(connfd, strLength, strlen(strLength)); 
+            write(connfd, CONTENT_TYPE, strlen(CONTENT_TYPE));
+            write(connfd, "text/plain\r\n", strlen("text/plain\r\n"));
+            write(connfd, "\r\n", 2);
+            write(connfd, message, strlen(message));
             break;
         default:
             break;

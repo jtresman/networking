@@ -13,25 +13,22 @@
 #include <arpa/inet.h>
 #include <sys/stat.h>
 #include <fcntl.h> // for open
-#include <unistd.h> // for close
-#include <assert.h>
-#include <pthread.h>
+#include <time.h>
+#include <signal.h>
+#include <errno.h>
 
 #define MAXLINE  8192  /* max text line length */
 #define MAXBUF   8192  /* max I/O buffer size */
 #define LISTENQ  1024  /* second argument to listen() */
 
 #define CONFIG_FILE      "/home/jacob/Documents/Networking/webserver/www/ws.conf"
-static char * ERROR_400      = "HTML/1.1 400 Bad Request: ";
-static char * BAD_METHOD     = "Invalid Method:  ";
-static char * BAD_URI        = "Invalid URI:  ";
-static char * BAD_HTTP_VER   = "Invalid HTTP-Version:  ";
+static char * ERROR_400      = "HTML/1.1 400 BAD REQUEST\r\n";
 static char * STATUS_200     = "HTTP/1.1 200 OK\n";
 static char * CONTENT_TYPE   = "Content-Type: ";
-static const char * CONTENT_LENGTH = "Content-length: "; 
-static const char * ERROR_404 = "HTTP/1.1 404 Not Found: ";
-static const char * ERROR_501 = "HTTP/1.1 501 Not Implemented ";
-static const char * ERROR_500 = "500 Internal Server Error: cannot allocate memeory";
+static char * CONTENT_LENGTH = "Content-length: "; 
+static char * ERROR_404 = "HTTP/1.1 404 NOT FOUND\r\n";
+static char * ERROR_501 = "HTTP/1.1 501 NOT IMPLEMENTED\r\n";
+static char * ERROR_500 = "HTTP/1.1 500 INTERNAL SERVER ERRROR\r\n";
 
 /* 
  * open_listenfd - open and return a listening socket on port
