@@ -16,13 +16,14 @@
 #include <time.h>
 #include <signal.h>
 #include <errno.h>
+#include <dirent.h> 
 
 #define MAXLINE  8192  /* max text line length */
 #define MAXBUF   8192  /* max I/O buffer size */
 #define LISTENQ  1024  /* second argument to listen() */
 
-static char SERVER_CONF[]    = "/home/jacob/Documents/Networking/distfile/dfs.conf";
-static char CLIENT_CONF[]    = "/home/jacob/Documents/Networking/distfile/dfc.conf";
+static char SERVER_CONF[] = "/home/jacob/Documents/Networking/distfile/dfs.conf";
+static int  NUM_SERVERS = 4;
 
 /* 
  *  * open_listenfd - open and return a listening socket on port

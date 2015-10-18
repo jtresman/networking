@@ -187,7 +187,7 @@ void httpRequest(int connfd) {
         siginterrupt(SIGALRM, 1);
         alarm(10);
 
-         // printf("DO KEEP ALIVE STUFF\n");
+         printf("DO KEEP ALIVE STUFF\n");
 
         // Loop Until the Alarm Occurs
          while(1) {
@@ -198,7 +198,7 @@ void httpRequest(int connfd) {
                 alarm(10);
                 timer = time(NULL);
                 getContent(command, connfd);
-                // printf("GET CALLED!\n");
+                 printf("GET CALLED!\n");
             }
             
             if (n == -1 && errno == EINTR) {
