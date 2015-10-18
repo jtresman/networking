@@ -23,15 +23,17 @@ typedef struct server{
 
     char host[20];
     int port;
+    int fd;
 
 } server;
 
 server * servers; 
 
+int servfd1, servfd2, servfd3, servfd4;
 
-int main(int argc, char **argv) 
-{
-    int servfd1, servfd2, servfd3, servfd4;
+
+int main(int argc, char **argv) {
+    
     char *conf, buf[MAXLINE];
     int n;
 
@@ -44,20 +46,20 @@ int main(int argc, char **argv)
     
     getConfig(conf);
 
-    servfd1 = open_clientfd(servers[1].host, servers[1].port);
-    servfd2 = open_clientfd(servers[2].host, servers[2].port);
-    servfd3 = open_clientfd(servers[3].host, servers[3].port);
-    servfd4 = open_clientfd(servers[4].host, servers[4].port);
+    servers[0].fd = open_clientfd(servers[0].host, servers[0].port);
+    servers[1].fd = open_clientfd(servers[1].host, servers[1].port);
+    servers[2].fd = open_clientfd(servers[2].host, servers[2].port);
+    servers[3].fd = open_clientfd(servers[3].host, servers[3].port);
 
     while (fgets(buf, MAXLINE, stdin) != NULL) {
         printf("The line was: %s\n", buf);
         processRequest(buf);
     }
 
-    close(servfd1);
-    close(servfd2);
-    close(servfd3);
-    close(servfd4);
+    close(servers[0].fd);
+    close(servers[1].fd);
+    close(servers[2].fd);
+    close(servers[3].fd);
 
     exit(0);
 }
@@ -120,7 +122,7 @@ void processRequest(char * buf){
         printf("GET CALLED!\n");
     } else if(strncmp(buf, "LIST", 4) == 0) {
         //List Call
-
+        write(servers[0].fd, buf, strlen(buf));
     } else if(strncmp(buf, "PUT", 3) == 0) {
         //Put Call
         //Token filename

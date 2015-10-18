@@ -16,7 +16,7 @@
 #include "nethelp.h"
 
 //Initalize Functions
-void request(int connfd);
+void request(int connFD);
 void getConfig();
 void sendFile();
 void getFile();
@@ -33,10 +33,14 @@ typedef struct user{
 } user;
 
 //Global Values
-int port;
+int serverPort;
 char serverDir[128] = ".";
 user * users;
-int connfd;  
+int numUsers;
+int connFD;  
+user currUser;
+
+char files[20][128];
 
 int main(int argc, char **argv) {
 
@@ -54,7 +58,7 @@ int main(int argc, char **argv) {
 
     mkdir(serverDir, 0770);
 
-    port = atoi(argv[2]);
+    serverPort = atoi(argv[2]);
 
     //Listen at the specified locaiton
     int listenfd, clientlen=sizeof(struct sockaddr_in);
@@ -63,14 +67,15 @@ int main(int argc, char **argv) {
     //Read Config for users
     getConfig();
 
-    listenfd = open_listenfd(port);
+    listenfd = open_listenfd(serverPort);
 
 
     //Call function to wait to process requests
     while (1) {
 
-        connfd = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);         
-        request(connfd);
+        connFD = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
+        // printf("Connected! %d\n", serverPort );         
+        request(connFD);
     }
 
     return 0;
@@ -84,7 +89,6 @@ void getConfig() {
     char * token;
     size_t len = 0;
     ssize_t read;
-    int content = 0; //If content Comment Found
     int num_users = 0;
     int i=0;
 
@@ -99,16 +103,18 @@ void getConfig() {
 
     num_users = atoi(line);
 
+    numUsers = num_users;
+
     users = malloc(num_users * sizeof(user));
 
-    printf("%d\n", num_users);
+    // printf("%d\n", num_users);
 
     //Read the config File
     while ((read = getline(&line, &len, fp)) != -1) {
 
         // strcpy(dir,serverDir);
 
-        printf("Line: %s", line);
+        // printf("Line: %s\n", line);
 
         //Tokenize Username and Passwd
         token = strtok(line, " ");
@@ -120,6 +126,8 @@ void getConfig() {
         token = strtok(NULL, " ");
         strcpy(users[i].passwd,token);
 
+        // printf("Name: %s Password: %s\n",users[i].name, users[i].passwd);
+
         i++;
 
     }
@@ -130,18 +138,17 @@ void getConfig() {
 }
 
 //Process Request: Check Command, Username and Password
-void request(int connfd) {
+void request(int connFD) {
 
     char command[MAXLINE] = ""; 
     char * token;
     char username[256];
     char passwd[256];
-    int n;
 
     while(1) {
 
         //Read Command, Host and Keep-Alive
-        readline(connfd, command, MAXLINE);
+        readline(connFD, command, MAXLINE);
 
         // printf("Line: %s\n", command);
 
@@ -150,16 +157,16 @@ void request(int connfd) {
 
         token = strtok(NULL, " ");
         if (token == NULL){
-            write(connfd, "Invalid Username/Password. Please try again.\n", 45);            close(connfd);
-            close(connfd);
+            write(connFD, "Invalid Command Format. Please try again.\n", 42);            close(connFD);
+            close(connFD);
             return;
         }
         strcpy(username, token);
 
         token = strtok(NULL, " ");
         if (token == NULL){
-            write(connfd, "Invalid Username/Password. Please try again.\n", 45);
-            close(connfd);
+            write(connFD, "Invalid Command Format. Please try again.\n", 42);
+            close(connFD);
             return;
         }
 
@@ -167,13 +174,18 @@ void request(int connfd) {
 
         token = strtok(NULL, " ");
 
-        //TODO Check Username and Password
+        //Check Username and Password
+        if (checkUser(username, passwd) == 0){
+            write(connFD, "Invalid Username/Password. Please try again.\n", 45);
+            close(connFD);
+            return;
+        } 
 
         // Check Command
         if (strncmp(command, "GET", 3) == 0) {
             //Token File Name
             printf("GET CALLED!\n");
-            getFile(command, connfd);
+            getFile(command, connFD);
         } else if(strncmp(command, "LIST", 4) == 0) {
             //List Call
             printf("LIST Called!\n");
@@ -184,19 +196,16 @@ void request(int connfd) {
 
         } else if(strncmp(command, "CHECK", 5) == 0){
             //Put Call
-            checkServer(token);
+            checkServer(token, username, passwd);
             printf("CHECK Called!\n");
 
         }else {
-
             printf("Unsupported Command: %s\n", command);
-            close(connfd);
+            close(connFD);
             return;
 
         }
-
     }
-
 }
 
 //LIST: LIST the possible files
@@ -237,17 +246,11 @@ void listFiles(char * username){
         }
 
         closedir(d);
-    } else {
-
-        printf("Directory Doesn't Exist. Creating!\n");
-
-        mkdir(directory, 0770);
-    }
+    } 
 }
 
-
 //GET: Grab the Content Request by the Client
-void getFile( char * file, int connfd) {
+void getFile( char * file, int connFD) {
     // printf("%s\n", file);
 
     // char * token  = strtok(file, " ");
@@ -262,11 +265,10 @@ void getFile( char * file, int connfd) {
 
 //PUT: Read the file from the client and same to dir
 void putFile(){
-
 }
 
 //Send the Requested File to the Client
-void sendFile(int fd, int connfd) {
+void sendFile(int fd, int connFD) {
     // printf("Start Reading\n");
 
     while(1) {
@@ -278,7 +280,7 @@ void sendFile(int fd, int connfd) {
         /* If read was success, send data. */
         if(nread > 0) {
             // printf("Sending \n");
-            write(connfd, buf, nread);
+            write(connFD, buf, nread);
         }
 
         //Check if End of File was Reached
@@ -287,48 +289,126 @@ void sendFile(int fd, int connfd) {
             break;
         }
     }
-    write(connfd, "\r\n", 2);
+    write(connFD, "\r\n", 2);
     close(fd);
 }
 
 //Checks if a valid usersname and password supplied
-int checkUser(char * username) {
-    //TODO Implement This
+int checkUser(char * username, char * password) {
 
-    return 1;
+    int i;
+    DIR * d;
+    int status;
+
+    char path[PATH_MAX];
+    char directory[MAXLINE];
+
+    strcpy(directory, serverDir);
+    strcat(directory, username);
+
+    if (strtok(password, "\n") != NULL){
+        // printf("We Must Strip!\n");
+        password = strtok(password, "\n"); 
+    }
+
+    // printf("IName: %s IPass: %s\n", username, password );
+
+    for (i = 0; i < numUsers; i++){
+        // printf("Name: %s Pass: %s\n", users[i].name, users[i].passwd);
+        if (strncmp(users[i].name, username, strlen(users[i].name)) == 0 
+            && strncmp(users[i].passwd, password, strlen(users[i].passwd)) == 0){
+            currUser = users[i];
+            // printf("We found the correct user!\n");
+            d = opendir(directory);
+
+            if(!d) {
+
+                printf("Directory Doesn't Exist. Creating!\n");
+                write(connFD, "Directory Doesn't Exist. Creating!\n", 35);
+
+                mkdir(directory, 0770);
+            }
+
+            return 1;
+        }
+    }
+
+    return 0;
 }
 
+//Check for another server
 void checkServer(char * filename){
 
     char currpart[256] = "";
     int fd;
 
-    strcat(currpart, serverDir);
+    // printf("Fil: %s\n", filename );
+    
+    sprintf(currpart, "%s%s/", serverDir, currUser.name);
     strcat(currpart, filename);
 
-    if (fd = open(filename, O_RDONLY) != -1){
-        write(connfd, "1\n", 2);
-        close(connfd);
-    } else {
-        write(connfd, "0\n", 2);
-        close(connfd);
-    }
+    strcpy(currpart, strtok(currpart, "\n"));
 
+    // printf("File: %s FD: %d\n", currpart, access( currpart, F_OK ));
+
+    if ((fd = access( currpart, F_OK )) != -1){
+        // printf("We found the file!\n");
+        write(connFD, "1\n", 2);
+        close(connFD);
+    } else {
+        // printf("We didn't find the file!\n");
+        write(connFD, "0\n", 2);
+        close(connFD);
+    }
 }
 
+//Request a Check on another Server
 int requestFileCheck(char * filename){
 
-    //Connect to Each Server
+    //Connect to Each Servers
+    char host[9] = "localhost";
+    static int currport = 10001;
+    char res[2];
+    int servfd = 0;
 
+    char command[MAXLINE];
 
-    //1 sec timeout
+    sprintf(command, "CHECK %s %s %s\n", currUser.name, currUser.passwd, filename);
 
+    // printf("Command RFC: %s\n", command);
 
-    //If file check other servers or return 1 when found
+    for(currport = 10001; currport<10005; currport++){
+
+        // printf("Port: %d\n", currport);    
+
+        if (currport == serverPort){
+
+        } else {
+            //Connect to Other Server
+            // printf("Trying to connect to server: %d\n", currport);
+
+            servfd = open_clientfd("localhost", currport);
+            
+            //TODO 1 sec timeout
+
+            write(servfd, command, strlen(command));
+            readline(servfd, res, 2);
+
+            // printf("We read: %s %d\n", res, strncmp(res, "1", 1));
+
+            if(strncmp(res, "1", 1) == 0){
+                // printf("WE FOUND IT!\n");
+                return 1;
+            }
+            close(servfd);
+        }
+    }
 
     return 0;
 }
 
+//Check the Current Server for the File
+//Request Check on other Server if not found
 void checkFileCurrServ(char * filename){
 
     // printf("File: %s\n", filename);
@@ -336,7 +416,7 @@ void checkFileCurrServ(char * filename){
     char ext[8] = "";
     char filenopart[256] = "";
     char currpart[256] = "";
-    char part[2] = "";
+    char path[256] = "";
 
     int fd;
 
@@ -348,69 +428,105 @@ void checkFileCurrServ(char * filename){
         sprintf(filenopart, "%s.%s", filenopart, ext);
     } 
 
+    //TODO Check to See if we Already Saw that File
+
     // printf("Filename: %s\n",filenopart);
 
     int part1 = 0;
     int part2 = 0;
     int part3 = 0;
     int part4 = 0;
-    int currport = port; 
 
     //Check Current Server for Part
-    strcat(currpart, serverDir);
-    strcat(currpart, filenopart);
-    strcpy(filenopart, currpart);
+    sprintf(path, "%s%s/", serverDir, currUser.name);
+
+    strcpy(currpart, filenopart);
     strcat(currpart, ".1");
+    
+    strcat(path, currpart);
 
+    // printf("Path: %s FD: %d\n", path, access( path, F_OK ));
 
-    if ((fd = open(currpart, O_RDONLY) != -1)){
+    if ((fd = open(path, O_RDONLY)) != -1){
         part1 = 1;  
+        // printf("CWe found part1\n");
+
     } else {
         if (requestFileCheck(currpart)){
+            // printf("SWe found part1\n");
             part1 = 1;
         }
     }
+    close(fd);
+
+    sprintf(path, "%s%s/", serverDir, currUser.name);
 
     strcpy(currpart, filenopart);
     strcat(currpart, ".2");
+    
+    strcat(path, currpart);
 
-    if (fd = open(currpart, O_RDONLY) != -1){
+    if ((fd = open(path, O_RDONLY)) != -1){
         part2 = 1;  
+        // printf("CWe found part3\n");
     } else {
          if (requestFileCheck(currpart)){
             part2 = 1;
+            // printf("SWe found part3\n");
         }
     }
+    close(fd);
+
+
+    sprintf(path, "%s%s/", serverDir, currUser.name);
 
     strcpy(currpart, filenopart);
     strcat(currpart, ".3");
+    
+    strcat(path, currpart);
 
-    if ((fd = open(currpart, O_RDONLY) != -1)){
+    if ((fd = open(path, O_RDONLY) != -1)){
         part3 = 1;  
+        // printf("CWe found part3\n");
+
     } else {
          if (requestFileCheck(currpart)){
             part3 = 1;
+            // printf("SWe found part3\n");
+
         }
     }
+    close(fd);
+
+    sprintf(path, "%s%s/", serverDir, currUser.name);
 
     strcpy(currpart, filenopart);
     strcat(currpart, ".4");
+    
+    strcat(path, currpart);
 
-    if ((fd = open(currpart, O_RDONLY) != -1)){
+    if ((fd = open(path, O_RDONLY) != -1)){
         part4 = 1;  
+        // printf("CWe found part4\n");
+
     } else {
          if (requestFileCheck(currpart)){
             part4 = 1;
+            // printf("SWe found part4\n");
         }
     }
+    close(fd);
+
+
+    //Add File to Check List
 
     if ((part1+part2+part3+part4) == 4){
-        write(connfd, filenopart, strlen(filenopart));
-        write(connfd, "\n", 1);
+        write(connFD, filenopart, strlen(filenopart));
+        write(connFD, "\n", 1);
     } else {
-        write(connfd, filenopart, strlen(filenopart));
-        write(connfd, " [incomplete]", 13);
-        write(connfd, "\n", 1);
+        write(connFD, filenopart, strlen(filenopart));
+        write(connFD, " [incomplete]", 13);
+        write(connFD, "\n", 1);
     }
 
 }
