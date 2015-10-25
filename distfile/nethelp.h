@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>      /* for fgets */
-#include <strings.h>     /* for bzero, bcopy */
+// #include <strings.h>     /* for bzero, bcopy */
 #include <unistd.h>      /* for read, write */
 #include <sys/socket.h>  /* for socket use */
 #include <netdb.h>
@@ -17,12 +17,13 @@
 #include <signal.h>
 #include <errno.h>
 #include <dirent.h> 
+#include <openssl/md5.h>
 
 #define MAXLINE  8192  /* max text line length */
 #define MAXBUF   8192  /* max I/O buffer size */
 #define LISTENQ  1024  /* second argument to listen() */
 
-static char SERVER_CONF[] = "/home/jacob/Documents/Networking/distfile/dfs.conf";
+static char SERVER_CONF[] = "./dfs.conf";
 static int  NUM_SERVERS = 4;
 
 /* 

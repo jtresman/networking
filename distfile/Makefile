@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -g
-LDFLAGS = -L /usr/lib/happycoders -lnsl -lrt -lsocket
+LDFLAGS = -L/usr/lib/happycoders -lnsl -lrt -lsocket -lcrypto
 
 OBJS = nethelp.o server.o client.o
 
@@ -16,10 +16,10 @@ client.o: client.c
 		$(CC) $(CFLAGS) -c client.c
 
 server: server.o nethelp.o
-		$(CC) $(LDFLAGS) -o $@ server.o nethelp.o
+		$(CC) -o $@ server.o nethelp.o $(LDFLAGS)
 
 client: client.o nethelp.o
-		$(CC) $(LDFLAGS) -o $@ client.o nethelp.o
+		$(CC) -o $@ client.o nethelp.o $(LDFLAGS) 
 
 clean:
 		rm -rf server client *.o *~ core ./DFS1 ./DFS2 ./DFS3 ./DFS4

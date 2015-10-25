@@ -18,6 +18,9 @@ void processRequest();
 int verifyUser();
 void putFile();
 void listFiles();
+void writeFile();
+int md5HashMod();
+void getFile();
 
 char userName[128];
 char passwd[128];
@@ -59,8 +62,6 @@ int main(int argc, char **argv){
     // printf("Server 4: FD %d Host: %s Port: %d\n", servers[3].fd, servers[3].host, servers[3].port);
 
     printf("Please Enter A Command: \n");
-
-    //TODO Find a Server that is avalible
 
     while (fgets(buf, MAXLINE, stdin) != NULL) {
         // printf("The line was: %s\n", buf);
@@ -170,7 +171,13 @@ void listFiles(){
 
     sprintf(command, "LIST %s %s\n", userName, passwd);
 
-    //TODO Try All Servers Incase one is down
+    //Find an avalible Server
+    for (i = 0; i < NUM_SERVERS; i++){
+        if (servers[i].fd > 0){
+            break;
+        }
+    }
+
     write(servers[i].fd, command, strlen(command));
 
     while(readline(servers[i].fd, buf, MAXLINE)){
@@ -180,6 +187,9 @@ void listFiles(){
         if(strncmp(buf, "Done", 4) == 0){
             // printf("Done Reading!\n");
             break;
+        } else if(strncmp(buf, "Error", 5) == 0){
+            printf("%s\n", buf);
+            break;
         } else {
             printf("%s", buf);
         }
@@ -187,6 +197,13 @@ void listFiles(){
 }
 
 //GET 
+void getFile(char * filename){
+
+
+
+
+}
+
 
 //PUT 
 void putFile(char * filename){
@@ -199,14 +216,6 @@ void putFile(char * filename){
     char command[MAXLINE];
     char path[MAXLINE];
     char strLength[BUFSIZ];
-    char partlen[MAXLINE];
-
-    sprintf(command, "PUT %s %s %s.1\n", userName, passwd, filename);
-
-    // printf("Command: %s\n", command );
-
-    //Location Each Part is going
-    int p1a,p1b,p2a,p2b,p3a,p3b,p4a,p4b;
 
     //Add Path to File Name
     strcat(path, "./");
@@ -218,7 +227,7 @@ void putFile(char * filename){
     fd = open(path, O_RDONLY);
     if (fd == -1) {
         printf("Error opening file!\n");
-        exit(1);
+        return;
     }
 
     //Split File Into Parts
@@ -232,92 +241,123 @@ void putFile(char * filename){
         part = len/NUM_SERVERS;
     }
 
-
     finalpart = (len - (part*NUM_SERVERS)) + part;
 
-    sprintf(partlen, "%d\n", part);
-    
-    unsigned char buf[part];
+    //Determine Mapping for File Part to Server
 
-    int nread = read(fd, buf, part);
+    //Inital Location Each Part is going
+    long int adjust = 0;
+
+    adjust = md5Hash(filename);
+
+    printf("Sum: %d\n", adjust );
+
+    adjust = adjust % 4;
+
+    printf("Adjust: %d\n", adjust );
+
+    int p1a = (0+adjust) % 4;
+    int p1b = (3+adjust) % 4;
+
+    int p2a = (0+adjust) % 4;
+    int p2b = (1+adjust) % 4;
     
-    //TODO Determine Mapping for File Part to Server
+    int p3a = (1+adjust) % 4;
+    int p3b = (2+adjust) % 4;
+
+    int p4a = (2+adjust) % 4;
+    int p4b = (3+adjust) % 4;
+
+
+    close(fd);
+
+    fd = open(path, O_RDONLY);
+    if (fd == -1) {
+        printf("Error opening file!\n");
+        return;
+    }
 
     //Write Part 1
-    if(nread > 0) {
-
-        p1a = 0;
-        p1b = 3;
-
-        // printf("Sending: %s %d\n", command, servers[p1a].fd);
-        write(servers[p1a].fd, command, strlen(command));
-        write(servers[p1a].fd, partlen, strlen(partlen));
-        write(servers[p1a].fd, buf, nread);
-        write(servers[p1b].fd, command, strlen(command));
-        write(servers[p1b].fd, partlen, strlen(partlen));
-        write(servers[p1b].fd, buf, nread);
-    }
+    sprintf(command, "PUT %s %s %s.1\n", userName, passwd, filename);
+    writeFile(p1a,p1b,fd,part,command);
 
     //Write Part 2
     sprintf(command, "PUT %s %s %s.2\n", userName, passwd, filename);
-    nread = read(fd, buf, part);
-    if(nread > 0) {
-
-        p2a = 0;
-        p2b = 1;
-
-        printf("Sending: %s %d %d\n", command, servers[p2b].fd, nread);
-        write(servers[p2a].fd, command, strlen(command));
-        write(servers[p2a].fd, partlen, strlen(partlen));
-        write(servers[p2a].fd, buf, nread);
-        write(servers[p2b].fd, command, strlen(command));
-        write(servers[p2b].fd, partlen, strlen(partlen));
-        write(servers[p2b].fd, buf, nread);
-    }
-
+    writeFile(p2a,p2b,fd,part,command);
 
     //Write Part 3
     sprintf(command, "PUT %s %s %s.3\n", userName, passwd, filename);
-    nread = read(fd, buf, part);
-    if(nread > 0) {
-
-        p3a = 1;
-        p3b = 2;
-
-        // printf("Sending: %s %d\n", command, servers[p1a].fd);
-        write(servers[p3a].fd, command, strlen(command));
-        write(servers[p3a].fd, partlen, strlen(partlen));
-        write(servers[p3a].fd, buf, nread);
-        write(servers[p3b].fd, command, strlen(command));
-        write(servers[p3b].fd, partlen, strlen(partlen));
-        write(servers[p3b].fd, buf, nread);
-    }
-
+    writeFile(p3a,p3b,fd,part,command);
 
     //Write Part 4
     sprintf(command, "PUT %s %s %s.4\n", userName, passwd, filename);
-    nread = read(fd, buf, finalpart);
-    sprintf(partlen, "%d\n", finalpart);
+    writeFile(p4a,p4b,fd,finalpart,command);
 
-    if(nread > 0) {
-
-        p4a = 2;
-        p4b = 3;
-
-        // printf("Sending: %s %d\n", command, servers[p1a].fd);
-        write(servers[p4a].fd, command, strlen(command));
-        write(servers[p4a].fd, partlen, strlen(partlen));
-        write(servers[p4a].fd, buf, nread);
-        write(servers[p4b].fd, command, strlen(command));
-        write(servers[p4b].fd, partlen, strlen(partlen));
-        write(servers[p4b].fd, buf, nread);
-    }
-
-
-    // write(s.fd, "\0", 1);
     close(fd);
 
-    printf("Finished PUTing\n");
+    // printf("Finished PUTing\n");
+}
+
+int md5Hash(char * filename){
+
+    unsigned char c[15];
+
+    long int sum;
+
+    FILE *inFile = fopen (filename, "rb");
+    MD5_CTX mdContext;
+    int bytes;
+    unsigned char data[1024];
+
+    if (inFile == NULL) {
+        printf ("%s can't be opened.\n", filename);
+        return 0;
+    }
+
+    MD5_Init (&mdContext);
+    while ((bytes = fread (data, 1, 1024, inFile)) != 0){
+        MD5_Update (&mdContext, data, bytes);
+    }
+
+    MD5_Final (c,&mdContext);
+   
+    fclose (inFile);
+
+    return c[15];
+}
+
+void writeFile(int ser1, int ser2, int fd, int part, char * command){
+    int nread;
+
+    char partlen[MAXLINE];
+    char error[MAXLINE];
+
+    unsigned char buf[part];
+
+    sprintf(partlen, "%d\n", part);
+
+    nread = read(fd, buf, part);
+    if(nread > 0) {
+
+        // printf("Sending: %s %d %d\n", command, servers[p2b].fd, nread);
+        write(servers[ser1].fd, command, strlen(command));
+        readline(servers[ser1].fd, error, MAXLINE);
+        if(strncmp(error, "Error", 5) == 0){
+            printf("%s", error);
+            return;
+        } 
+        write(servers[ser1].fd, partlen, strlen(partlen));
+        write(servers[ser1].fd, buf, nread);
+         
+        write(servers[ser2].fd, command, strlen(command));
+        readline(servers[ser2].fd, error, MAXLINE);
+        if(strncmp(error, "Error", 5) == 0){
+            printf("%s", error);
+            return;
+        } 
+        write(servers[ser2].fd, partlen, strlen(partlen));
+        write(servers[ser2].fd, buf, nread);
+    }
 }
 
 //Verify the Username is Corret
@@ -333,7 +373,7 @@ int verifyUser(){
     sprintf(command, "VERIFY %s %s\n", userName, passwd);
 
 
-    printf("Verify User! %s %s\n", userName, passwd );
+    printf("Verifing User! %s %s\n", userName, passwd );
 
     while ((servfd = open_clientfd("localhost", servers[i].port)) < 0 && i<NUM_SERVERS){
 
@@ -341,19 +381,24 @@ int verifyUser(){
 
     }
 
-    if (servfd < 0){
+    if (servfd > 0){
         write(servfd, command, strlen(command));
 
         readline(servfd, res, 2);
 
-        printf("We read: %s %d\n", res, strncmp(res, "1", 1));
+        // printf("We read: %s %d\n", res, strncmp(res, "1", 1));
 
         if(strncmp(res, "1", 1) == 0){
             printf("User Verified!\n");
             return 1;
-        } 
+        }  else {
+
+            printf("User Not Verified! Please Check Your Credentials\n");
+
+        }
     } else {
         printf("We could not connect to any server to verify user!\n");
+        exit(0);
     }
 
     close(servfd);

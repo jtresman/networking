@@ -76,12 +76,14 @@ int main(int argc, char **argv) {
 
         int connfd = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
         // printf("Connected! %d\n", serverPort );
+
         childPID = fork();
         
         if (childPID == 0){
             request(connfd);    
             exit(0);        
         }  
+
         close(connfd);
 
         
@@ -235,38 +237,79 @@ void listFiles(char * username, int connfd){
     struct dirent *dir;
     struct stat filedets;
 
+    struct dirent **namelist;
+    int i,n;
+
     char path[PATH_MAX];
     char directory[MAXLINE];
+
+    char ext1[8] = "";
+    char prevfile[256] = "";
+    char currfile[256] = "";
 
     strcpy(directory, serverDir);
     strcat(directory, username);
 
     d = opendir(directory);
+    
+    free(namelist);
+
 
     if (d) {
-        while ((dir = readdir(d)) != NULL) {
-            if (strcmp(".", dir->d_name) == 0){
+       
+        n = scandir(directory, &namelist, 0, alphasort);
+    
+        if (n < 0) {
+            printf("Error: Problem Reading Directory!\n");
+            write(connfd, "Error: Problem Reading Directory!\n", 34);
+        } else {
+            for (i = 0; i < n; i++) {
+                if (strcmp(".", namelist[i]->d_name) == 0){
                 //Skip Current Dir
-            } else if (strcmp("..", dir->d_name) == 0){
-                //Skip Prev Dir
-            } else {
-                sprintf(path, "%s/%s", directory, dir->d_name);
-                lstat(path, &filedets);
-                if(S_ISDIR(filedets.st_mode)) {
-                    //Skip Directories
+                } else if (strcmp("..", namelist[i]->d_name) == 0){
+                    //Skip Prev Dir
                 } else {
-                    // printf("%s\n", dir->d_name);
-                    checkFileCurrServ(dir->d_name, connfd);
+
+                    sprintf(path, "%s/%s", directory, namelist[i]->d_name);
+                    lstat(path, &filedets);
+                    
+                    if(S_ISDIR(filedets.st_mode)) {
+                        //Skip Directories
+                    } else {
+                        printf("%s\n", namelist[i]->d_name);
+
+                        //Strip of the Part Extension
+                        strcpy(currfile, namelist[i]->d_name);
+
+                        // strcpy(ext1, strtok (NULL, "."));
+
+                        // if (strtok (NULL, ".") != NULL){
+                        //     sprintf(currfile, "%s.%s", currfile, ext1);
+                        // } 
+
+                        // printf("Check %s %s %d %d \n", currfile, prevfile, strncmp(currfile, prevfile, strlen(currfile-1)), strlen(currfile)); 
+
+                        // //Check if the Files are just the same parts
+                        if (strncmp(currfile, prevfile, strlen(currfile)-1) != 0){
+                            // printf("We Must Check this File!\n");
+                            checkFileCurrServ(namelist[i]->d_name, connfd);
+                        } 
+                        
+                        strcpy(prevfile, currfile);
+                    }
                 }
+                free(namelist[i]);
             }
         }
+
 
         write(connfd, "Done\n", 5);
 
         closedir(d);
 
-
-    } 
+    } else {
+        //There was a problem
+    }
 
     printf("List Done!\n");
 }
@@ -295,13 +338,16 @@ void putFile(char * filename, int connfd){
     //Add Path onto File Name
     sprintf(path, "%s%s/%s", serverDir, currUser.name, filename);
 
-    printf("Path: %s\n", path );
+    // printf("Path: %s\n", path );
 
     //Open File for Writing
     FILE *f = fopen(path, "w");
     if (f == NULL) {
         printf("Error opening file!\n");
+        write(connfd, "Error: Opening File!\n", 34);
         exit(1);
+    } else {
+        write(connfd, "Good!\n", 6);
     }
 
     readline(connfd, buf, 15);
@@ -315,8 +361,6 @@ void putFile(char * filename, int connfd){
 
     //Write Line to File
     fprintf(f, "%s", buf);
-
-    // }
 
     //Close File
     fclose(f);
@@ -419,7 +463,6 @@ void checkServer(char * filename, int connfd){
 int requestFileCheck(char * filename){
 
     //Connect to Each Servers
-    // char host[9] = "localhost";
     static int currport = 10001;
     char res[2];
     int servfd = 0;
@@ -473,6 +516,8 @@ void checkFileCurrServ(char * filename, int connfd){
 
     int fd;
 
+    //Strip of the Part Extension
+
     strcpy(filenopart, strtok (filename, "."));
 
     strcpy(ext, strtok (NULL, "."));
@@ -481,9 +526,7 @@ void checkFileCurrServ(char * filename, int connfd){
         sprintf(filenopart, "%s.%s", filenopart, ext);
     } 
 
-    //TODO Check to See if we Already Saw that File
-
-    printf("Filename: %s\n",filenopart);
+    // printf("Filename: %s\n",filenopart);
 
     int part1 = 0;
     int part2 = 0;
@@ -546,7 +589,6 @@ void checkFileCurrServ(char * filename, int connfd){
         if (requestFileCheck(currpart)){
             part3 = 1;
             // printf("SWe found part3\n");
-
         }
     }
     close(fd);
@@ -573,7 +615,7 @@ void checkFileCurrServ(char * filename, int connfd){
 
     //Add File to Check List
     if ((part1+part2+part3+part4) == 4){
-        printf("File Found!: %s\n", filenopart );
+        // printf("File Found!: %s\n", filenopart );
         write(connfd, filenopart, strlen(filenopart));
         write(connfd, "\n", 1);
     } else {
