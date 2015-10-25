@@ -38,8 +38,7 @@ int open_listenfd(int port)
  *   *   and return a socket descriptor ready for reading and writing.
  *    *   Return <0 in case of failure.
  *     */
-int open_clientfd(char *hostname, int port)
-{
+int open_clientfd(char *hostname, int port) {
     int clientfd;
     struct hostent *hp;
     struct sockaddr_in serveraddr;
@@ -68,8 +67,7 @@ int open_clientfd(char *hostname, int port)
  *   * return the number of characters read
  *    * return -1 if error
  *     */
-int readline(int fd, char * buf, int maxlen)
-{
+int readline(int fd, char * buf, int maxlen) {
     int nc, n = 0;
     for(n=0; n < maxlen-1; n++)
     {
