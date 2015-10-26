@@ -1,0 +1,32 @@
+Distributed File Server
+
+Created by: Jacob Resman
+Date: 25 October 2015 
+
+This is a distributed file server. The allows a users to list files, put or get files on the server.
+It splits up the file onto different servers an also duplicates so there is reduncancy.
+
+MAKE:
+Simple Type Make in an open terminal
+
+RUN:
+To run the server type:
+
+Server: 
+./server /DFS1 10001&
+./server /DFS1 10002&
+./server /DFS1 10003&
+./server /DFS1 10004&
+
+Client: 
+./client dfc1.conf or ./client dfc1.conf
+
+Commands:
+
+Commands Are: 
+LIST
+GET "filename"
+PUT "filename"
+*Replace File Name with the desired file.
+
+The user is validated each command by reading from the dfc config file.

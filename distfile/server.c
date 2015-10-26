@@ -16,10 +16,12 @@
 #include "nethelp.h"
 
 //Initalize Functions
-void request(int connfd);
+void request();
 void getConfig();
 void sendFile();
 void getFile();
+void getPart();
+int findAndWrite();
 void putFile();
 void listFiles();
 int checkUser();
@@ -27,6 +29,7 @@ void checkServer();
 void checkFileCurrServ();
 int requestFileCheck();
 
+//Structs
 typedef struct user{
     char name[128];
     char passwd[128];
@@ -38,8 +41,6 @@ char serverDir[128] = ".";
 user * users;
 int numUsers;
 user currUser;
-
-char files[20][128];
 
 int main(int argc, char **argv) {
 
@@ -199,10 +200,13 @@ void request(int connfd) {
         }
 
         // Check Command
-        if (strncmp(command, "GET", 3) == 0) {
+        if(strncmp(command, "GETP", 4) == 0){
+            printf("GETP Called!\n");
+            getPart(token, connfd);
+        } else if (strncmp(command, "GET", 3) == 0) {
             //Token File Name
             printf("GET CALLED!\n");
-            getFile(command, connfd);
+            getFile(token, connfd);
         } else if(strncmp(command, "LIST", 4) == 0) {
             //List Call
             printf("LIST Called!\n");
@@ -219,7 +223,7 @@ void request(int connfd) {
         } else if(strncmp(command, "VERIFY", 6) == 0){
             printf("VERIFY Called!\n");
 
-        } else {
+        }  else {
             printf("Unsupported Command: %s\n", command);
             close(connfd);
             return;
@@ -234,7 +238,6 @@ void listFiles(char * username, int connfd){
     printf("Getting Files for: %s\n", username);
 
     DIR * d;
-    struct dirent *dir;
     struct stat filedets;
 
     struct dirent **namelist;
@@ -243,7 +246,6 @@ void listFiles(char * username, int connfd){
     char path[PATH_MAX];
     char directory[MAXLINE];
 
-    char ext1[8] = "";
     char prevfile[256] = "";
     char currfile[256] = "";
 
@@ -281,14 +283,6 @@ void listFiles(char * username, int connfd){
                         //Strip of the Part Extension
                         strcpy(currfile, namelist[i]->d_name);
 
-                        // strcpy(ext1, strtok (NULL, "."));
-
-                        // if (strtok (NULL, ".") != NULL){
-                        //     sprintf(currfile, "%s.%s", currfile, ext1);
-                        // } 
-
-                        // printf("Check %s %s %d %d \n", currfile, prevfile, strncmp(currfile, prevfile, strlen(currfile-1)), strlen(currfile)); 
-
                         // //Check if the Files are just the same parts
                         if (strncmp(currfile, prevfile, strlen(currfile)-1) != 0){
                             // printf("We Must Check this File!\n");
@@ -315,17 +309,210 @@ void listFiles(char * username, int connfd){
 }
 
 //GET: Grab the Content Request by the Client
-void getFile( char * file, int connfd) {
-    // printf("%s\n", file);
+void getFile( char * filename, int connfd) {
+    
+    char filelen[MAXLINE];
+    char path[PATH_MAX];
 
-    // char * token  = strtok(file, " ");
-    // char * location;
-    // char * version;
-    // char path[1024] = {};
-    // int fd;  //file descriptor
-    // char * ext;
-    // int i = 0;
+    long int totallen = 0;
+    long int len;
+    int nread, fdtemp;
 
+    unsigned char * buf;
+
+    //Add Path onto File Name
+    sprintf(path, "%s%s/%s", serverDir, currUser.name, filename);
+
+    // printf("Path: %s\n", path);
+
+    //Create a temp file to write into
+    fdtemp = open(path, O_RDWR | O_CREAT);
+    if (fdtemp == -1) {
+        write(connfd, "Error: Could Create File!\n", 26);
+        printf("Error opening file!\n");
+        return;
+    }
+
+    //Check Current Server for Part
+    if((len = findAndWrite(fdtemp, filename, 1)) != -99){
+        totallen+= len;
+    } else {
+        //TODO Write an error to the Client
+        write(connfd, "Error: Could Not Find Part 1. File Could not be recreated!\n", 59);
+        printf("Could not find Part 1!\n");
+        return;
+    }
+
+    if((len = findAndWrite(fdtemp, filename, 2)) != -99){
+        totallen+= len;
+    } else {
+        write(connfd, "Error: Could Not Find Part 2. File Could not be recreated!\n", 59);
+        printf("Could not find Part 2!\n");
+        return;
+    }
+
+    if((len = findAndWrite(fdtemp, filename, 3)) != -99){
+        totallen+= len;
+    } else {
+        write(connfd, "Error: Could Not Find Part 3. File Could not be recreated!\n", 59);
+        printf("Could not find Part 3!\n");
+        return;
+    }
+
+    if((len = findAndWrite(fdtemp, filename, 4)) != -99){
+        totallen+= len;
+    } else {
+        write(connfd, "Error: Could Not Find Part 4. File Could not be recreated!\n", 59);
+        printf("Could not find Part 4!\n");
+        return;
+    }
+
+    close(fdtemp);
+    
+    //Send file to the Client
+    //Sent File Length
+    sprintf(filelen, "%d\n", totallen);
+
+    //Write File Length
+    write(connfd, filelen, strlen(filelen));
+
+    //Read File into Buffer
+    buf = (unsigned char *) realloc(buf, totallen);
+    fdtemp = open(path, O_RDONLY);
+    if (fdtemp == -1) {
+        printf("Error opening file!\n");
+        write(connfd, "Error: Could Not Open File!\n", 28);
+        return;
+    }
+
+    nread = read(fdtemp, buf, totallen);
+
+    if(nread > 0) {
+
+        // printf("NRead %d\n", nread );
+
+        write(connfd, buf, totallen);
+
+    }
+
+    close(fdtemp);
+    free(buf);
+    remove(path);
+
+    // printf("Finished Sending the File!\n");
+}
+
+int findAndWrite(int fdtemp, char * filename, int part){
+
+    int fd, currport, servfd;
+    struct stat fileStat; 
+    int len = -99;
+
+    char path[PATH_MAX];
+    char command[MAXLINE];
+    char currfile[MAXLINE];
+    unsigned char * buf;
+
+    strcpy(currfile, filename);
+
+    sprintf(currfile, "%s.%d", currfile, part);
+
+    // printf("File: %s\n",currfile );
+
+    //Add Path onto File Name
+    sprintf(path, "%s%s/%s", serverDir, currUser.name, currfile);
+
+    // printf("Path: %s\n",path );
+
+    if ((fd = open(path, O_RDONLY)) != -1){
+        // printf("File opned for reading!\n");
+        //Read File Length
+        fstat(fd, &fileStat);
+
+        len = fileStat.st_size;
+    
+        buf = (unsigned char *) malloc(sizeof(char)*len);
+
+        //Keep reading lines from client
+        read(fd, buf, len);
+
+        //Write Line to File
+        write(fdtemp, buf, len);
+
+    } else {
+
+        if ((currport = requestFileCheck(currfile))){
+            // printf("We must read from another server!\n");
+
+           sprintf(command, "GETP %s %s %s\n", currUser.name, currUser.passwd, currfile);
+           servfd = open_clientfd("localhost", currport);
+
+            //TODO 1 sec timeout
+
+            write(servfd, command, strlen(command));
+
+            //Read File Length
+            readline(servfd, buf, 15);
+
+            // printf("Len %d\n", len );
+
+            len = atoi(buf);
+
+            buf = (unsigned char *) malloc(sizeof(unsigned char)*len);
+
+
+            //Read File Content
+            read(servfd, buf, len);
+
+            //Write Line to File
+            write(fdtemp, buf, len);
+
+        } else {
+            //BREAK AND WRITE ERROR
+        }
+    }
+
+    return len;
+
+    close(servfd);
+    close(fd);
+    free(buf);
+}
+
+//Get part to pass back to main server
+void getPart(char * filename, int connfd){
+
+    int nread, fd, len;
+    char filelen[BUFSIZ];
+    char path[PATH_MAX];
+    struct stat fileStat; 
+
+
+    sprintf(path, "%s%s/%s", serverDir, currUser.name, filename);
+
+    fd = open(path, O_RDONLY);
+    if (fd == -1) {
+        printf("Error opening file!\n");
+        return;
+    }
+
+    //Split File Into Parts
+    fstat(fd, &fileStat);
+
+    sprintf(filelen, "%d\n", fileStat.st_size);
+
+    len = atoi(filelen);
+
+    unsigned char buf[len];
+
+    nread = read(fd, buf, len);
+    if(nread > 0) {
+
+        write(connfd, filelen, strlen(filelen));
+        write(connfd, buf, nread);
+    }
+
+    close(fd);
 }
 
 //PUT: Read the file from the client and same to dir
@@ -475,13 +662,12 @@ int requestFileCheck(char * filename){
 
     for(currport = 10001; currport<10005; currport++){
 
-        // printf("Port: %d\n", currport);    
+        printf("Port: %d\n", currport);    
 
         if (currport == serverPort){
 
         } else {
             //Connect to Other Server
-            // printf("Trying to connect to server: %d\n", currport);
 
             servfd = open_clientfd("localhost", currport);
 
@@ -493,8 +679,8 @@ int requestFileCheck(char * filename){
             // printf("We read: %s %d\n", res, strncmp(res, "1", 1));
 
             if(strncmp(res, "1", 1) == 0){
-                // printf("WE FOUND IT!\n");
-                return 1;
+                printf("WE FOUND IT!\n");
+                return (currport);
             }
             close(servfd);
         }

@@ -19,7 +19,7 @@ int verifyUser();
 void putFile();
 void listFiles();
 void writeFile();
-int md5HashMod();
+int md5Hash();
 void getFile();
 
 char userName[128];
@@ -55,11 +55,6 @@ int main(int argc, char **argv){
     servers[1].fd = open_clientfd(servers[1].host, servers[1].port);
     servers[2].fd = open_clientfd(servers[2].host, servers[2].port);
     servers[3].fd = open_clientfd(servers[3].host, servers[3].port);
-
-    // printf("Server 1: FD %d Host: %s Port: %d\n", servers[0].fd, servers[0].host, servers[0].port);
-    // printf("Server 2: FD %d Host: %s Port: %d\n", servers[1].fd, servers[1].host, servers[1].port);
-    // printf("Server 3: FD %d Host: %s Port: %d\n", servers[2].fd, servers[2].host, servers[2].port);
-    // printf("Server 4: FD %d Host: %s Port: %d\n", servers[3].fd, servers[3].host, servers[3].port);
 
     printf("Please Enter A Command: \n");
 
@@ -134,14 +129,16 @@ void getConfig(char * confile){
 //Process a Request
 void processRequest(char * buf){
 
-    char * token;
+    char token[64] = "";
 
     // Check Command
     if (strncmp(buf, "GET", 3) == 0) {
         //Token File Name
         printf("GET CALLED!\n");
         //Call Get Function
-
+        strtok(buf, " ");
+        strcpy(token, strtok(NULL, "\n"));
+        getFile(token);
     } else if(strncmp(buf, "LIST", 4) == 0) {
         //List Call
         listFiles();
@@ -149,7 +146,7 @@ void processRequest(char * buf){
         printf("PUT Called!\n");
         if (userVerified){
             strtok(buf, " ");
-            token = strtok(NULL, "\n");
+            strcpy(token, strtok(NULL, "\n"));
             putFile(token);
         } else {
             printf("User not Verified! Please Enter the Corret Credentials!\n");
@@ -199,11 +196,70 @@ void listFiles(){
 //GET 
 void getFile(char * filename){
 
+    unsigned char * buf;
+    char path[PATH_MAX];
+    char command[MAXLINE];
+
+    int fd, i, len;
+    int servfd = -1;
+
+    //Add Path onto File Name
+    strcat(path, "./");
+    strcat(path, filename);
 
 
+    //Send Command to Reposive Server
+    while ((servfd = open_clientfd("localhost", servers[i].port)) < 0 && i<NUM_SERVERS){
+        i++;
+    }
 
+    if (servfd < 0){
+        printf("No Servers avalible!\n");
+        exit(0);
+    }
+
+    sprintf(command, "GET %s %s %s\n", userName, passwd, filename);
+
+    write(servers[i].fd, command, strlen(command));
+
+    //Open File for Writing
+    fd = open(filename, O_RDWR | O_CREAT, S_IRWXU);
+    if (fd == -1) {
+        printf("Error opening file!\n");
+        exit(1);
+    } 
+
+    buf = (unsigned char *)malloc(sizeof(unsigned char)*15);
+
+    //Read the File Length
+    readline(servers[i].fd, buf, MAXLINE);
+    if(strncmp(buf, "Error", 5) == 0){
+        printf("%s", buf);
+        free(buf);
+        close(fd);
+        return;
+    }
+
+    len = atoi(buf);
+
+    //Read File from server
+    buf = (unsigned char *) realloc(buf, sizeof(unsigned char)*len);
+
+    read(servers[i].fd, buf, len);
+
+    if(strncmp(buf, "Error", 5) == 0){
+        printf("%s", buf);
+        free(buf);
+        close(fd);
+        return;
+    }
+
+    //Write Line to File
+    write(fd, buf, len);
+
+    //Close File
+    close(fd);
 }
-
 
 //PUT 
 void putFile(char * filename){
@@ -213,15 +269,15 @@ void putFile(char * filename){
     int part, finalpart;
     struct stat fileStat; 
 
-    char command[MAXLINE];
-    char path[MAXLINE];
-    char strLength[BUFSIZ];
+    char command[MAXLINE] = "";
+    char path[MAXLINE] = "";
+    char strLength[BUFSIZ] = "";
 
     //Add Path to File Name
     strcat(path, "./");
     strcat(path, filename);
 
-    // printf("File Name: %s \n", path );
+    printf("File Name: %s \n", path );
 
     //Open File for Reading
     fd = open(path, O_RDONLY);
@@ -250,11 +306,11 @@ void putFile(char * filename){
 
     adjust = md5Hash(filename);
 
-    printf("Sum: %d\n", adjust );
+    // printf("Sum: %d\n", adjust );
 
     adjust = adjust % 4;
 
-    printf("Adjust: %d\n", adjust );
+    // printf("Adjust: %d\n", adjust );
 
     int p1a = (0+adjust) % 4;
     int p1b = (3+adjust) % 4;
@@ -298,11 +354,10 @@ void putFile(char * filename){
     // printf("Finished PUTing\n");
 }
 
+//Calcualte the MD5 Hash of the File
 int md5Hash(char * filename){
 
     unsigned char c[15];
-
-    long int sum;
 
     FILE *inFile = fopen (filename, "rb");
     MD5_CTX mdContext;
@@ -326,6 +381,7 @@ int md5Hash(char * filename){
     return c[15];
 }
 
+//Write the File to the server
 void writeFile(int ser1, int ser2, int fd, int part, char * command){
     int nread;
 
@@ -344,6 +400,7 @@ void writeFile(int ser1, int ser2, int fd, int part, char * command){
         readline(servers[ser1].fd, error, MAXLINE);
         if(strncmp(error, "Error", 5) == 0){
             printf("%s", error);
+            free(buf);
             return;
         } 
         write(servers[ser1].fd, partlen, strlen(partlen));
@@ -353,6 +410,7 @@ void writeFile(int ser1, int ser2, int fd, int part, char * command){
         readline(servers[ser2].fd, error, MAXLINE);
         if(strncmp(error, "Error", 5) == 0){
             printf("%s", error);
+            free(buf);
             return;
         } 
         write(servers[ser2].fd, partlen, strlen(partlen));
