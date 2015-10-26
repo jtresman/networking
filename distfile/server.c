@@ -285,7 +285,7 @@ void listFiles(char * username, int connfd){
 
                         // //Check if the Files are just the same parts
                         if (strncmp(currfile, prevfile, strlen(currfile)-1) != 0){
-                            // printf("We Must Check this File!\n");
+                            printf("We Must Check this File!\n");
                             checkFileCurrServ(namelist[i]->d_name, connfd);
                         } 
                         
@@ -662,7 +662,7 @@ int requestFileCheck(char * filename){
 
     for(currport = 10001; currport<10005; currport++){
 
-        printf("Port: %d\n", currport);    
+        printf("CPort: %d S: %d\n", currport, serverPort);    
 
         if (currport == serverPort){
 
@@ -671,18 +671,18 @@ int requestFileCheck(char * filename){
 
             servfd = open_clientfd("localhost", currport);
 
-            //TODO 1 sec timeout
+            if (servfd > 0 ){
+                write(servfd, command, strlen(command));
+                readline(servfd, res, 2);
 
-            write(servfd, command, strlen(command));
-            readline(servfd, res, 2);
+                printf("We read: %s %d\n", res, strncmp(res, "1", 1));
 
-            // printf("We read: %s %d\n", res, strncmp(res, "1", 1));
-
-            if(strncmp(res, "1", 1) == 0){
-                printf("WE FOUND IT!\n");
-                return (currport);
+                if(strncmp(res, "1", 1) == 0){
+                    printf("WE FOUND IT!\n");
+                    close(servfd);
+                    return (currport);
+                }
             }
-            close(servfd);
         }
     }
 
@@ -693,7 +693,7 @@ int requestFileCheck(char * filename){
 //Request Check on other Server if not found
 void checkFileCurrServ(char * filename, int connfd){
 
-    // printf("File: %s\n", filename);
+    printf("File: %s\n", filename);
 
     char ext[8] = "";
     char filenopart[256] = "";
@@ -703,7 +703,6 @@ void checkFileCurrServ(char * filename, int connfd){
     int fd;
 
     //Strip of the Part Extension
-
     strcpy(filenopart, strtok (filename, "."));
 
     strcpy(ext, strtok (NULL, "."));
@@ -712,12 +711,15 @@ void checkFileCurrServ(char * filename, int connfd){
         sprintf(filenopart, "%s.%s", filenopart, ext);
     } 
 
-    // printf("Filename: %s\n",filenopart);
+    printf("Filename: %s\n",filenopart);
 
     int part1 = 0;
     int part2 = 0;
     int part3 = 0;
     int part4 = 0;
+
+//=============================================================
+//CHECK PART 1
 
     //Check Current Server for Part
     sprintf(path, "%s%s/", serverDir, currUser.name);
@@ -727,20 +729,24 @@ void checkFileCurrServ(char * filename, int connfd){
 
     strcat(path, currpart);
 
-    // printf("Path: %s FD: %d\n", path, access( path, F_OK ));
+    printf("Path: %s FD: %d\n", path, access( path, F_OK ));
+
+    printf("Check 1\n");
 
     if ((fd = open(path, O_RDONLY)) != -1){
         part1 = 1;  
-        // printf("CWe found part1\n");
+        printf("CWe found part1\n");
+        close(fd);
 
     } else {
         if (requestFileCheck(currpart)){
-            // printf("SWe found part1\n");
+            printf("SWe found part1\n");
             part1 = 1;
         }
     }
-    close(fd);
 
+//=============================================================
+//CHECK PART 2
     sprintf(path, "%s%s/", serverDir, currUser.name);
 
     strcpy(currpart, filenopart);
@@ -748,19 +754,24 @@ void checkFileCurrServ(char * filename, int connfd){
 
     strcat(path, currpart);
 
+    printf("Check 2\n");
+
     if ((fd = open(path, O_RDONLY)) != -1){
         part2 = 1;  
-        // printf("CWe found part3\n");
+        // close(fd);
+        // printf("CWe found part2\n");
     } else {
         if (requestFileCheck(currpart)){
             part2 = 1;
-            // printf("SWe found part3\n");
+            // printf("SWe found part2\n");
         }
     }
-    close(fd);
 
-
+//=============================================================
+//CHECK PART 3
     sprintf(path, "%s%s/", serverDir, currUser.name);
+
+    // printf("Check 3\n");
 
     strcpy(currpart, filenopart);
     strcat(currpart, ".3");
@@ -769,15 +780,19 @@ void checkFileCurrServ(char * filename, int connfd){
 
     if ((fd = open(path, O_RDONLY) != -1)){
         part3 = 1;  
+        // close(fd);
         // printf("CWe found part3\n");
-
+        // printf("Keep moving\n");
     } else {
         if (requestFileCheck(currpart)){
             part3 = 1;
             // printf("SWe found part3\n");
         }
     }
-    close(fd);
+
+//==============================================================
+//CHECK PART 4
+    printf("Check 4\n");
 
     sprintf(path, "%s%s/", serverDir, currUser.name);
 
@@ -789,6 +804,7 @@ void checkFileCurrServ(char * filename, int connfd){
     if ((fd = open(path, O_RDONLY) != -1)){
         part4 = 1;  
         // printf("CWe found part4\n");
+        // close( fd);
 
     } else {
         if (requestFileCheck(currpart)){
@@ -796,15 +812,17 @@ void checkFileCurrServ(char * filename, int connfd){
             // printf("SWe found part4\n");
         }
     }
+//==============================================================
+
     close(fd);
 
-
-    //Add File to Check List
+    //Check to See if all the parts were found
     if ((part1+part2+part3+part4) == 4){
-        // printf("File Found!: %s\n", filenopart );
+        printf("File Found!: %s\n", filenopart );
         write(connfd, filenopart, strlen(filenopart));
         write(connfd, "\n", 1);
     } else {
+        printf("File Not Found!\n");
         write(connfd, filenopart, strlen(filenopart));
         write(connfd, " [incomplete]", 13);
         write(connfd, "\n", 1);

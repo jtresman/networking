@@ -165,19 +165,23 @@ void listFiles(){
     char buf[MAXLINE];
 
     int i = 0;
+    int servfd;
 
     sprintf(command, "LIST %s %s\n", userName, passwd);
 
     //Find an avalible Server
-    for (i = 0; i < NUM_SERVERS; i++){
-        if (servers[i].fd > 0){
-            break;
-        }
+    while ((servfd = open_clientfd("localhost", servers[i].port)) < 0 && i<NUM_SERVERS){
+        i++;
     }
 
-    write(servers[i].fd, command, strlen(command));
+    if (servfd < 0){
+        printf("No Servers avalible!\n");
+        return;
+    }
 
-    while(readline(servers[i].fd, buf, MAXLINE)){
+    write(servfd, command, strlen(command));
+
+    while(readline(servfd, buf, MAXLINE)){
 
         // printf("Line %s\n", buf );
 
@@ -191,6 +195,8 @@ void listFiles(){
             printf("%s", buf);
         }
     }
+
+    close(servfd);
 }
 
 //GET 
