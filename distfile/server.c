@@ -296,7 +296,6 @@ void listFiles(char * username, int connfd){
             }
         }
 
-
         write(connfd, "Done\n", 5);
 
         closedir(d);

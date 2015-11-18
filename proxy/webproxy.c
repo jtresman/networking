@@ -1,13 +1,13 @@
 /* **************************************************************
  * 
  * CSCI 4273 - Network Systems
- * Basic Webserver 
- * This webserver servers up basic HTML, TXT, PNG
- *  JPG. It also supports piplining as well as 
- *  subsequent requests.
+ * Basic Webproxy
+ * This webproxy accepts a request from a client and either 
+ *  forwards it to the appropriate location or gets it from
+ *  the cache.
  * 
  * Author: Jacob Resman
- * 20 September 2015
+ * 15 November 2015
  * Based on: echoserver.c - A sequential httpRequest server from
  *  from http://www.csc.villanova.edu/~mdamian/sockets/echoC.htm
  * 
@@ -17,30 +17,43 @@
 #include "nethelp.h"
 
 //Initalize Functions
-void httpRequest(int connfd);
-void getConfig();
-int checkFileType();
-char * checkDefaultFile();
+void request(int connfd);
 void sendFile();
 void getContent();
 void sendHeader();
 void errorCode();
+void forwardRequest();
+int checkCache();
+int checkFileType();
+void putFile();
+void replaceChar(char * str, char cur, char rep);
 
 //Global Values
 int port;
 char fileExt[9][6];
 char fileHeader[9][32];
-char documentRoot[128];
+char proxyRoot[128];
 char defaultPage[64];
+char serverDir[128] = ".";
+int timeout = 0;
 
 int main(int argc, char **argv) {
 
     printf("Just getting started!\n");
-    int listenfd, clientlen=sizeof(struct sockaddr_in);
+    int listenfd, clientlen = sizeof(struct sockaddr_in);
     struct sockaddr_in clientaddr;
     pid_t childPID;
 
-    getConfig();
+    if(argc != 3){
+        printf("Invalid Arguments!");
+        return -1;
+    }
+
+    port = atoi(argv[1]);
+
+    timeout = atoi(argv[2]);
+
+    // getConfig();
 
     listenfd = open_listenfd(port);
 
@@ -48,190 +61,142 @@ int main(int argc, char **argv) {
         
         int connfd = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen); 
        
-        printf("Someone Conneted!\n");
-
         childPID = fork();
         
         if (childPID == 0){
-            httpRequest(connfd);    /* Service client */
+            request(connfd);    /* Service client */
+            close(connfd);
             exit(0);        /* code */
         }  
-        close(connfd);
     }
 
     return 0;
 }
 
 //Read the Configuration File
-void getConfig() {
+// void getConfig() {
 
-    FILE * fp; 
-    char * line = NULL;
-    char * tok;
-    size_t len = 0;
-    ssize_t read;
-    int i = 0;
-    int content = 0; //If content Comment Found
+//     FILE * fp; 
+//     char * line = NULL;
+//     char * tok;
+//     size_t len = 0;
+//     ssize_t read;
+//     int i = 0;
+//     int content = 0; //If content Comment Found
 
-    fp = fopen(CONFIG_FILE, "r");
-    if (fp == NULL)
-        exit(EXIT_FAILURE);
+//     fp = fopen(CONFIG_FILE, "r");
+//     if (fp == NULL)
+//         exit(EXIT_FAILURE);
 
-    // printf("We are congfiguring\n");
-    //Read the config File
-    while ((read = getline(&line, &len, fp)) != -1) {
+//     // printf("We are congfiguring\n");
+//     //Read the config File
+//     while ((read = getline(&line, &len, fp)) != -1) {
 
-        //printf("Line: %s\n", line);
+//         //printf("Line: %s\n", line);
 
-        if (strcmp("#serviceport number\n", line) == 0){
-            content = 1;
-        }  else if (strcmp("#document root\n", line) == 0){
-            content = 2;
-        } else if (strcmp("#default web page\n", line) == 0){
-            content = 3;
-        } else if (strcmp("#Content-Type\n", line) == 0){
-            content = 4;
-        } else {
+//         if (strcmp("#serviceport number\n", line) == 0){
+//             content = 1;
+//         }  else if (strcmp("#document root\n", line) == 0){
+//             content = 2;
+//         } else if (strcmp("#default web page\n", line) == 0){
+//             content = 3;
+//         } else if (strcmp("#Content-Type\n", line) == 0){
+//             content = 4;
+//         } else {
 
-            switch(content){
+//             switch(content){
 
-                case 1:
+//                 case 1:
                     
-                    port = atoi(line);
-                    // printf("Service Port: %d\n",port);
-                    break;
+//                     port = atoi(line);
+//                     // printf("Service Port: %d\n",port);
+//                     break;
 
-                case 2:
+//                 case 2:
                 
-                    strcpy(documentRoot, line);
-                    memmove (documentRoot, documentRoot+1, strlen (documentRoot+1) + 1);
-                    //Remove the Newline and Quotes
-                    documentRoot[strlen(documentRoot)-2] = 0;
-                    // printf("Document Root: %s\n", documentRoot);
-                    break;
+//                     strcpy(proxyRoot, line);
+//                     memmove (proxyRoot, proxyRoot+1, strlen (proxyRoot+1) + 1);
+//                     //Remove the Newline and Quotes
+//                     proxyRoot[strlen(proxyRoot)-2] = 0;
+//                     // printf("Document Root: %s\n", proxyRoot);
+//                     break;
 
-                case 3:
+//                 case 3:
 
-                    strcpy(defaultPage, line);
-                    //Remove the Newline
-                    defaultPage[strlen(defaultPage)-1] = 0;
-                    // printf("Default Page: %s\n", defaultPage);
-                    break;
+//                     strcpy(defaultPage, line);
+//                     //Remove the Newline
+//                     defaultPage[strlen(defaultPage)-1] = 0;
+//                     // printf("Default Page: %s\n", defaultPage);
+//                     break;
 
-                case 4: 
+//                 case 4: 
                     
-                    tok = strtok(line, " ");
-                    strcpy(fileExt[i], tok);
-                    // printf("File Ext: %s\n",tok);
-                    tok = strtok(NULL, " ");
-                    strcpy(fileHeader[i], tok); 
-                    // printf("File Header: %s\n",tok);
-                    ++i;
-                    break;
+//                     tok = strtok(line, " ");
+//                     strcpy(fileExt[i], tok);
+//                     // printf("File Ext: %s\n",tok);
+//                     tok = strtok(NULL, " ");
+//                     strcpy(fileHeader[i], tok); 
+//                     // printf("File Header: %s\n",tok);
+//                     ++i;
+//                     break;
 
-                default:
-                    break;
+//                 default:
+//                     break;
 
-            }
-        }
-    }
+//             }
+//         }
+//     }
 
-    fclose(fp);
-    if (line)
-        free(line);
-}
-
-//Alarm Handler
-void timeout_handler(int value) {
-    // printf("Handler\n");
-    return;
-}
+//     fclose(fp);
+//     if (line)
+//         free(line);
+// }
 
 //Read the Request Page and Information
-void httpRequest(int connfd) {
+void request(int connfd) {
     
+    //Read the Request
     char command[MAXLINE] = ""; 
     char host[MAXLINE] = ""; 
-    char keepAlive[MAXLINE] = ""; 
-
-    timer_t timer;
-    int n;
 
     //Read Command, Host and Keep-Alive
     readline(connfd, command, MAXLINE);
-    readline(connfd, host, MAXLINE);
-    readline(connfd, keepAlive, MAXLINE);
+    // readline(connfd, host, MAXLINE);
     
     printf("Line 1: %s\n", command);
-    printf("Line 2: %s\n", host);
-    // printf("Line 3: %s\n", keepAlive);
-    // printf("Line Num: %d\n", n);
+    // printf("Line 2: %s\n", host);
 
     // Check if GET Command
     if (strncmp(command, "GET", 3) == 0) {
-        printf("GET CALLED!\n");
-        getContent(command, connfd);
-    } else if(n == -1) {
-        //Intentionally Left Blank
-
-    }else {
+        //Check is the URL is Cached
+        // printf("GET CALLED!\n");
+        if (checkCache(command)){
+            getContent(command, connfd);
+        } else {
+            forwardRequest(command, connfd);
+        }        
+    } else {
         errorCode(400, 1, command, connfd);
         printf("Unsupported Command: %s\n", command);
         return;
     }
     
-    //Check for keep-alive
-    if (strcmp(keepAlive, "Connection: keep-alive\r\n") == 0) {
-
-
-        //Setup Alarm for Keep Alive
-        signal(SIGALRM, timeout_handler);
-        siginterrupt(SIGALRM, 1);
-        alarm(10);
-
-         printf("DO KEEP ALIVE STUFF\n");
-
-        // Loop Until the Alarm Occurs
-         while(1) {
-
-            n = readline(connfd, command, MAXLINE);
-
-            if (strncmp(command, "GET", 3) == 0) {
-                alarm(10);
-                timer = time(NULL);
-                getContent(command, connfd);
-                 printf("GET CALLED!\n");
-            }
-            
-            if (n == -1 && errno == EINTR) {
-                // printf("read() failed\n");
-                break;
-            }                      
-        }
-
-        // printf("HTTP REQUEST PROCESSED!\n");
-
-    } 
-
-    // printf("HTTP REQUEST PROCESSED!\n");
-
     // printf("Closing Connection: %d\n", connfd);
-    close(connfd);
 }
 
 //Grab the Content Request by the Client
 void getContent( char * file, int connfd) {
-    // printf("%s\n", file);
+    
+    printf("Get Content From Cache\n");
 
+    //Change to Request from Cache
     char * token  = strtok(file, " ");
     char * location;
     char * version;
     char path[1024] = {};
     int fd;  //file descriptor
-    char * ext;
-    int i = 0;
 
-    strcpy(path, documentRoot);
+    strcpy(path, proxyRoot);
 
     //Grab Location Token
     token = strtok(NULL, " ");
@@ -248,49 +213,21 @@ void getContent( char * file, int connfd) {
         return;
     }
 
-    if (strcmp(version, "HTTP/1.1\r\n") != 0){
+    if (strcmp(version, "HTTP/1.0\r\n") != 0){
         printf("Invaid HTTP Version!\n");
         errorCode(400, 3, version, connfd);
         return;
     }
 
-    // printf("Location: %s\n", location);
+    printf("Location: %s\n", location);
     // printf("Cmp: %d\n", strcmp(location, "/")); 
 
     //Determine File Type
-    if (strcmp(location, "/") == 0){
-        
-        // printf("Path: %s\n", path);
-        // printf("defaultPage: %s\n",defaultPage );
+    replaceChar(location, '/', '_');
 
-        i = 0;
-        strcat(path, "/");
-        strcat(path, defaultPage);
-        // printf("Path: %s12\n", path);
+    sprintf(path, "./%s", location);
 
-    } else {
-
-        //Grab Extension
-        ext = strrchr(location, '.');
-
-        if( (i = checkFileType(ext)) != -1){
-
-            strcat(path, location);
-
-        } else {
-
-            errorCode(501, 0, location, connfd);
-            return;
-            //Unsupportedd File Type
-            // write(connfd, CONTENT_TYPE, strlen(CONTENT_TYPE));
-            // write(connfd, "text/plain\n", 11);
-            // write(connfd, ERROR_501, strlen(ERROR_501));
-            // write(connfd, location, strlen(location));
-            // write(connfd, "\r\n", 2); 
-        }
-    } 
-
-    // printf("File: %s\n", path);
+    printf("File: %s\n", path);
 
     //Check if the File Exists and Send it.
     fd = open(path, O_RDONLY);
@@ -303,50 +240,9 @@ void getContent( char * file, int connfd) {
          close(fd);
         return;
     } else {
-        sendHeader(fd, i, connfd);
+        // sendHeader(fd, i, connfd);
         sendFile(fd, connfd);
     }
-}
-
-//Check for Supported File Type
-int checkFileType(char * ext) {
-
-    int i;
-
-    //Determine if Supported Ext
-    for (i = 0; i < sizeof(fileExt); ++i){
-        if(strcmp(ext, fileExt[i]) == 0){
-            break;
-        }
-    }
-
-    //Unsupported File Type
-    if (i == sizeof(fileExt)){
-        return -1;
-    }
-
-    return i;
-}
-
-//Process and Send the Neccesary Header to the Client
-void sendHeader(int fd, int i, int connfd) {
-
-    char strLength[BUFSIZ];
-    struct stat fileStat; 
-
-    fstat(fd, &fileStat);
-
-    sprintf(strLength, "%d\n", fileStat.st_size);
-
-    //Write Headers to Server
-    write(connfd, STATUS_200, strlen(STATUS_200));
-    write(connfd, CONTENT_LENGTH, strlen(CONTENT_LENGTH));
-    write(connfd, strLength, strlen(strLength)); 
-    write(connfd, CONTENT_TYPE, strlen(CONTENT_TYPE));
-    write(connfd, fileHeader[i], strlen(fileHeader[i]));
-    write(connfd, "\n", 1);
-
-    // printf("File Header: %s\n", fileHeader[i]);
 }
 
 //Send the Requested File to the Client
@@ -470,5 +366,174 @@ void errorCode(int err, int type, char * loc, int connfd) {
     }
 }
 
+//Check Cache to see if file Exists
+int checkCache(char * command) { 
 
+    printf("Check Cache!\n");
 
+    char * token;
+    char location[MAXBUF] = "";
+    char path[128] = "";
+
+    struct stat statbuf;
+
+    strcpy(location, command);
+
+    token = strtok(location, " ");
+
+    //Grab Location Token
+    token = strtok(NULL, " ");
+    strcpy(location, token);
+
+    //Replace / to _ 
+    replaceChar(location, '/', '_');
+    sprintf(path, "./%s", location);
+
+    printf("Path: %s\n", path );
+
+    if (stat(path, &statbuf) == -1) {
+        perror(path);
+        return 0;
+    }
+    
+    if (statbuf.st_mtime > (time(0) + (timeout*1000))){
+        return 0; 
+    }
+
+    return 1;
+}
+
+//Check for Supported File Type
+int checkFileType(char * ext) {
+
+    int i;
+
+    //Determine if Supported Ext
+    for (i = 0; i < sizeof(fileExt); ++i){
+        if(strcmp(ext, fileExt[i]) == 0){
+            break;
+        }
+    }
+
+    //Unsupported File Type
+    if (i == sizeof(fileExt)){
+        return -1;
+    }
+
+    return i;
+}
+
+//Forward the Request to the corret host and port
+void forwardRequest(char * command, int connfd) {
+
+    // printf("Forward Request! %s\n", command);
+
+    char * token;
+    char location[PATH_MAX];
+    char buf[MAXBUF] = "";
+    char host[128] = "";
+    char file[128] = "";
+
+    int serverfd;
+    int port = DEFAULT_WEB_PORT;
+
+    strcpy(buf, command);
+
+    token = strtok(buf, " ");
+
+    //Grab Location Token
+    token = strtok(NULL, " ");
+    strcpy(location, token);
+
+    printf("Location: %s Port: %d \n", location, port );
+
+    //TODO Add Configurable Port
+    // if ((token = strtok(location, "?")) != NULL){
+    //     port = atoi(token);
+    //     printf("2Location: %s Port: %d \n", location, port );
+    // }
+
+    //Strip Out Host
+    strcpy(host, location);
+
+    //Remove http://
+    token = strtok(host, "/");
+    token = strtok(NULL, "/");
+
+    strcpy(host,token);
+
+    // printf("Host: %s\n", host );
+
+    serverfd = open_clientfd(host, port);
+
+    // printf("Command: %s FD: %d\n", command, serverfd );
+
+    //Intinal Page or A different Page
+    token = strtok(NULL, " ");
+    if (token == NULL){
+        sprintf(file, "GET %s/ HTTP/1.0\r\n\r\n", host);
+    } else {
+        sprintf(file, "GET %s/%s HTTP/1.0\r\n\r\n", host, token);
+    } 
+
+    // printf("File: %s\n", file);
+
+    write(serverfd, file, strlen(file));
+
+    //Read response to a file
+    putFile(location, connfd, serverfd);
+
+    close(serverfd);
+
+}
+
+//PUT: Read the response from the website and wite to a file
+void putFile(char * filename, int connfd, int serverfd){
+
+    printf("Put File!\n");
+
+    char path[PATH_MAX];
+    int chunkRead;
+    char data[512];
+
+    //Add Path onto File Name
+    replaceChar(filename, '/', '_');
+    sprintf(path, "%s/%s", serverDir, filename);
+
+    printf("Path: %s\n", path );
+
+    //Open File for Writing
+
+    remove(path);
+
+    FILE *f = fopen(path, "w");
+    if (f == NULL) {
+        printf("Error opening file!\n");
+        write(connfd, "Error: Opening File!\n", 34);
+        exit(1);
+    } 
+
+    while ((chunkRead = read(serverfd, data, sizeof(data)))!= (size_t)NULL)//send file
+    {
+        write(connfd, data, chunkRead);
+        fprintf(f, "%s", data);
+    }
+
+    fprintf(f, "\r\n");
+
+    //Close File
+    fclose(f);
+}
+
+//Remove a Character from a string
+void replaceChar(char * str, char cur, char rep){
+
+    int j = 0;
+
+    while (str[j] != '\0'){
+        if (str[j] == cur) {
+            str[j] = rep;
+        }
+        j++;
+    }
+}
