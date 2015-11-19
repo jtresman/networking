@@ -25,7 +25,6 @@
 
 #define CONFIG_FILE      "/home/jacob/Documents/Networking/proxy/proxy.conf"
 static char * ERROR_400      = "HTML/1.1 400 BAD REQUEST\r\n";
-static char * STATUS_200     = "HTTP/1.1 200 OK\n";
 static char * CONTENT_TYPE   = "Content-Type: ";
 static char * CONTENT_LENGTH = "Content-length: "; 
 static char * ERROR_404 = "HTTP/1.1 404 NOT FOUND\r\n";

@@ -1,0 +1,15 @@
+Proxy
+
+Created by: Jacob Resman
+Date: 18 November 2015 
+
+This webproxy accepts a request from a client and either forwards it to the appropriate location or gets it from the cache.
+
+MAKE:
+Simple Type Make in an open terminal
+
+RUN:
+The arguments port and timeout for the cache in seconds.
+To run the server type:
+
+./webproxy 10001 1&

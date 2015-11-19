@@ -53,8 +53,6 @@ int main(int argc, char **argv) {
 
     timeout = atoi(argv[2]);
 
-    // getConfig();
-
     listenfd = open_listenfd(port);
 
     while (1) {
@@ -72,85 +70,6 @@ int main(int argc, char **argv) {
 
     return 0;
 }
-
-//Read the Configuration File
-// void getConfig() {
-
-//     FILE * fp; 
-//     char * line = NULL;
-//     char * tok;
-//     size_t len = 0;
-//     ssize_t read;
-//     int i = 0;
-//     int content = 0; //If content Comment Found
-
-//     fp = fopen(CONFIG_FILE, "r");
-//     if (fp == NULL)
-//         exit(EXIT_FAILURE);
-
-//     // printf("We are congfiguring\n");
-//     //Read the config File
-//     while ((read = getline(&line, &len, fp)) != -1) {
-
-//         //printf("Line: %s\n", line);
-
-//         if (strcmp("#serviceport number\n", line) == 0){
-//             content = 1;
-//         }  else if (strcmp("#document root\n", line) == 0){
-//             content = 2;
-//         } else if (strcmp("#default web page\n", line) == 0){
-//             content = 3;
-//         } else if (strcmp("#Content-Type\n", line) == 0){
-//             content = 4;
-//         } else {
-
-//             switch(content){
-
-//                 case 1:
-                    
-//                     port = atoi(line);
-//                     // printf("Service Port: %d\n",port);
-//                     break;
-
-//                 case 2:
-                
-//                     strcpy(proxyRoot, line);
-//                     memmove (proxyRoot, proxyRoot+1, strlen (proxyRoot+1) + 1);
-//                     //Remove the Newline and Quotes
-//                     proxyRoot[strlen(proxyRoot)-2] = 0;
-//                     // printf("Document Root: %s\n", proxyRoot);
-//                     break;
-
-//                 case 3:
-
-//                     strcpy(defaultPage, line);
-//                     //Remove the Newline
-//                     defaultPage[strlen(defaultPage)-1] = 0;
-//                     // printf("Default Page: %s\n", defaultPage);
-//                     break;
-
-//                 case 4: 
-                    
-//                     tok = strtok(line, " ");
-//                     strcpy(fileExt[i], tok);
-//                     // printf("File Ext: %s\n",tok);
-//                     tok = strtok(NULL, " ");
-//                     strcpy(fileHeader[i], tok); 
-//                     // printf("File Header: %s\n",tok);
-//                     ++i;
-//                     break;
-
-//                 default:
-//                     break;
-
-//             }
-//         }
-//     }
-
-//     fclose(fp);
-//     if (line)
-//         free(line);
-// }
 
 //Read the Request Page and Information
 void request(int connfd) {
@@ -396,7 +315,9 @@ int checkCache(char * command) {
         return 0;
     }
     
-    if (statbuf.st_mtime > (time(0) + (timeout*1000))){
+    printf("File Time: %d CurTime: %d Timeout: %d \n", statbuf.st_mtime, time(0), timeout );
+
+    if (statbuf.st_mtime <= (time(0) + timeout)){
         return 0; 
     }
 
@@ -426,7 +347,7 @@ int checkFileType(char * ext) {
 //Forward the Request to the corret host and port
 void forwardRequest(char * command, int connfd) {
 
-    // printf("Forward Request! %s\n", command);
+    /// printf("Forward Request! %s\n", command);
 
     char * token;
     char location[PATH_MAX];
@@ -435,6 +356,7 @@ void forwardRequest(char * command, int connfd) {
     char file[128] = "";
 
     int serverfd;
+    int isPort = 0;
     int port = DEFAULT_WEB_PORT;
 
     strcpy(buf, command);
@@ -447,11 +369,16 @@ void forwardRequest(char * command, int connfd) {
 
     printf("Location: %s Port: %d \n", location, port );
 
-    //TODO Add Configurable Port
-    // if ((token = strtok(location, "?")) != NULL){
-    //     port = atoi(token);
-    //     printf("2Location: %s Port: %d \n", location, port );
-    // }
+    //Add Configurable Port
+    strcpy(buf, location);
+    strtok(buf, ":");
+    strtok(NULL, ":");
+    token = strtok(NULL, ":");
+    if (token != NULL){
+        port = atoi(token);
+        printf("Location1: %s Port: %d \n", location, port );
+        isPort = 1;
+    } 
 
     //Strip Out Host
     strcpy(host, location);
@@ -462,21 +389,29 @@ void forwardRequest(char * command, int connfd) {
 
     strcpy(host,token);
 
-    // printf("Host: %s\n", host );
+    printf("Host: %s\n", host );
 
     serverfd = open_clientfd(host, port);
 
-    // printf("Command: %s FD: %d\n", command, serverfd );
+    printf("Command: %s FD: %d\n", command, serverfd );
 
     //Intinal Page or A different Page
     token = strtok(NULL, " ");
-    if (token == NULL){
+    if (token == NULL && !isPort){
         sprintf(file, "GET %s/ HTTP/1.0\r\n\r\n", host);
-    } else {
+    } else if (token != NULL && !isPort){
         sprintf(file, "GET %s/%s HTTP/1.0\r\n\r\n", host, token);
-    } 
+    } else if (isPort) {
+        token = strtok(token, ":");
+        printf("token: %s\n", token );
+        if (atoi(token) != 0){
+            sprintf(file, "GET %s/ HTTP/1.0\r\n\r\n", host);
+        } else {
+            sprintf(file, "GET %s/%s HTTP/1.0\r\n\r\n", host, token);
+        }
+    }
 
-    // printf("File: %s\n", file);
+    printf("File: %s\n", file);
 
     write(serverfd, file, strlen(file));
 
@@ -503,7 +438,6 @@ void putFile(char * filename, int connfd, int serverfd){
     printf("Path: %s\n", path );
 
     //Open File for Writing
-
     remove(path);
 
     FILE *f = fopen(path, "w");
